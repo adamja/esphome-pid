@@ -4,7 +4,7 @@ A custom ESPHome component for implementing PID control on ESP32 devices.
 
 ## Overview
 
-This project provides a PID (Proportional-Integral-Derivative) controller component for ESPHome that can be used for various control applications like temperature control, motor speed control, and other feedback systems.
+This project provides a flexible Proportional-Integral-Derivative (PID) controller component for ESPHome, suitable for temperature, speed, and other feedback control applications. It is designed for easy integration, real-time tuning, and compatibility with a variety of sensors and actuators.
 
 ## Features
 
@@ -23,32 +23,10 @@ This project provides a PID (Proportional-Integral-Derivative) controller compon
 
 ## Installation
 
-1. Copy the `components/pid_controller` directory to your ESPHome project
-2. Include the component in your YAML configuration
-3. Configure sensors and parameters as needed
+1. Copy the `components/pid_controller` directory into your ESPHome project.
+2. Reference the component in your YAML configuration.
+3. Configure your sensors, setpoints, and PID parameters as needed.
 
-## Configuration Example
-
-```yaml
-sensor:
-  - platform: dht
-    pin: GPIO4
-    temperature:
-      name: "Temperature Input"
-      id: temp_input
-
-pid_controller:
-  id: my_pid
-  input_sensor: temp_input
-  setpoint_sensor: setpoint
-  kp_sensor: pid_kp_sensor
-  ki_sensor: pid_ki_sensor
-  kd_sensor: pid_kd_sensor
-  output_sensor: pid_output
-  state_sensor: pid_state
-  threshold: 0.5
-  update_interval: 2s
-```
 
 ## PID Modes: P_ON_E vs P_ON_M
 You'll most often choose between "Proportional-on-Error" (P_ON_E) and "Proportional-on-Measurement" (P_ON_M) based on how sensitive your loop is to sudden setpoint changes or measurement noise.
@@ -104,24 +82,26 @@ In most Arduino PID applications the default P_ON_E is fine, but if you notice e
 3. **Add integral action:** Increase Kᵢ to eliminate steady-state error
 4. **Fine-tune with derivative:** Add small amounts of Kd to reduce overshoot
 
-## Files Structure
+## Project Structure
 
 ```
-components/
-├── pid_controller/
-│   ├── __init__.py          # ESPHome component configuration
-│   ├── pid_controller.h     # C++ header file
-│   └── pid_controller.cpp   # C++ implementation
-config.yaml                  # Main ESPHome configuration
-esp-pid-1.yaml              # Device-specific configuration
+esp-pid/
+├── base_esp_sensor.yaml         # Base sensor config
+├── base_esp.yaml                # Base ESP config
+├── base_group.yaml              # Base group config
+├── base_heartbeat.yaml          # Heartbeat, time sync, MQTT status
+├── config_input.yaml            # Input config
+├── config_output.yaml           # Output config
+├── config_pid.yaml              # PID config
+├── esp-pid-1.yaml               # Example device config
+├── secrets.yaml                 # Secrets (WiFi, MQTT, etc.)
+├── components/
+│   ├── ds3502/                  # DS3502 digital potentiometer support
+│   │   ├── ds3502.cpp, .h, .py  # DS3502 implementation
+│   │   └── output.cpp, .h       # Output helpers
+│   └── pid_controller/          # PID controller component
+│       ├── __init__.py
+│       ├── pid_controller.cpp, .h
+│       └── PID_v1.cpp, .h       # PID logic
+└── documents/                   # Reference images, datasheets (not tracked in git)
 ```
-
-## Dependencies
-
-- ESPHome 2025.6.2 or later
-- Arduino PID Library (automatically downloaded from GitHub)
-- ESP32 Arduino framework
-
-## License
-
-This project is open source. Please check individual component licenses for specific terms.
