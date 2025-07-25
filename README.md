@@ -2,6 +2,28 @@
 
 A custom ESPHome component for implementing PID control on ESP32 devices.
 
+## Configuration Parameters
+
+These options provide fine-grained control of the PID behavior and integration within your ESPHome project.
+
+| Parameter                     | Description                                                                                   |
+|-------------------------------|-----------------------------------------------------------------------------------------------|
+| **Setpoint**                  | Desired target value (e.g., target temperature).                                              |
+| **P / I / D**                 | PID gains: Proportional, Integral, Derivative values for tuning response.                     |
+| **Direction**                 | `Direct` or `Reverse` – determines whether increasing input increases or decreases output.    |
+| **Mode**                      | `Manual` or `Automatic` – allows external override of PID logic.                              |
+| **Proportional On**           | `P_ON_E` (Proportional on Error) or `P_ON_M` (Proportional on Measurement).                   |
+| **Output Manual Value**       | Manual override value when in Manual mode.                                                    |
+| **Input Invert**              | If true, inverts the input signal.                                                            |
+| **Output Invert**             | If true, inverts the output signal.                                                           |
+| **Input Scale Min / Max**     | Minimum and maximum values used to scale the raw input reading.                               |
+| **Output Scale Min / Max**    | Range to scale PID output (e.g., 0–1 for PWM, 0–100 for percent).                             |
+| **Output Threshold**          | Value above/below which a binary output is triggered (e.g., relay turns on/off).              |
+| **Input Low Alarm Setpoint**  | Triggers a callback when input falls below threshold.                                         |
+| **Input High Alarm Setpoint** | Triggers a callback when input rises above threshold.                                         |
+| **Sampling Mode**             | `Event-driven` or `Time-based` sampling for PID calculation updates.                          |
+
+
 ## Overview
 
 This project provides a flexible Proportional-Integral-Derivative (PID) controller component for ESPHome, suitable for temperature, speed, and other feedback control applications. It is designed for easy integration, real-time tuning, and compatibility with a variety of sensors and actuators.
