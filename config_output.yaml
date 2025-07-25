@@ -1,0 +1,129 @@
+# Global variable to track DAC output level
+globals:
+  - id: dac_level
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+
+# Web server group for physical outputs
+web_server:
+  sorting_groups:
+    - id: group_physical_output
+      name: Physical Output
+      sorting_weight: 20
+
+# I2C configuration for DS3502 (ESP32 default pins)
+i2c:
+  sda: 21
+  scl: 22
+  scan: true
+
+# Adafruit DS3502 I2C Digital 10K Potentiometer
+# External component implementation
+ds3502:
+  id: my_ds3502
+  address: 0x28
+
+
+# DS3502 Digital Potentiometer Output
+output:
+  - platform: ds3502
+    id: ds3502_output
+    ds3502_id: my_ds3502
+
+# DAC Output Configuration (commented out)
+# output:
+#   - platform: esp32_dac
+#     pin: GPIO25
+#     id: dac_output
+
+# DAC output invert switch
+switch:
+  - platform: template
+    name: "Physical Output Invert"
+    id: dac_invert_output_switch
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    web_server:
+      sorting_group_id: group_physical_output
+      sorting_weight: 10
+    
+# All sensors for physical output monitoring
+sensor:
+  - platform: template
+    name: "Physical Output"
+    id: physical_output_sensor
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    update_interval: 1s
+    lambda: |-
+      // Read the current DAC level from global variable
+      float current_dac_level = id(dac_level);
+      // Invert if switch is ON
+      if (id(dac_invert_output_switch).state) {
+        current_dac_level = 1.0f - current_dac_level;
+      }
+      // Convert to voltage (0V to 3.3V)
+      float voltage = current_dac_level * 3.3f;
+      ESP_LOGD("physical_output", "DAC level: %.3f, Voltage: %.2fV", current_dac_level, voltage);
+      return voltage;
+    web_server:
+      sorting_group_id: group_physical_output
+      sorting_weight: 1
+
+  - platform: template
+    name: "Physical Output Raw"
+    id: physical_output_raw_sensor
+    accuracy_decimals: 3
+    update_interval: 1s
+    lambda: |-
+      float current_dac_level = id(dac_level);
+      if (id(dac_invert_output_switch).state) {
+        current_dac_level = 1.0f - current_dac_level;
+      }
+      ESP_LOGD("physical_output_raw", "Raw DAC level: %.3f", current_dac_level);
+      return current_dac_level;
+    web_server:
+      sorting_group_id: group_physical_output
+      sorting_weight: 2
+
+  - platform: template
+    name: "Physical Output Percentage"
+    id: physical_output_percentage_sensor
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    update_interval: 1s
+    lambda: |-
+      float current_dac_level = id(dac_level);
+      if (id(dac_invert_output_switch).state) {
+        current_dac_level = 1.0f - current_dac_level;
+      }
+      float percentage = current_dac_level * 100.0f;
+      ESP_LOGD("physical_output_percentage", "DAC percentage: %.1f%%", percentage);
+      return percentage;
+    web_server:
+      sorting_group_id: group_physical_output
+      sorting_weight: 3
+
+# Script to set DAC output with inversion check
+script:
+  - id: set_output
+    parameters:
+      raw_value: float
+    then:
+      - lambda: |-
+          float final_value = raw_value;
+          
+          // Check if output inversion is enabled
+          if (id(dac_invert_output_switch).state) {
+            final_value = 1.0f - raw_value;  // Invert within 0.0-1.0 range
+            ESP_LOGD("set_output", "Inverting output: %.3f -> %.3f", raw_value, final_value);
+          } else {
+            ESP_LOGD("set_output", "Using normal output: %.3f", raw_value);
+          }
+          
+          // Update global variable for sensors
+          id(dac_level) = final_value;
+          
+          // Set the DS3502 digital potentiometer output
+          id(ds3502_output).set_level(final_value);

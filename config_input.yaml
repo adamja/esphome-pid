@@ -1,0 +1,40 @@
+# Web server group for physical inputs
+web_server:
+  sorting_groups:
+    - id: group_physical_input
+      name: Physical Input
+      sorting_weight: 10
+
+# Physical input invert switch
+switch:
+  - platform: template
+    name: "Physical Input Invert"
+    id: physical_invert_input_switch
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    web_server:
+      sorting_group_id: group_physical_input
+      sorting_weight: 10
+
+# MQTT Subscribe sensor that forwards to pid_input
+sensor:
+  - platform: mqtt_subscribe
+    name: "MQTT PID Input"
+    id: mqtt_pid_input
+    topic: "esp-scale-5/sensor/weight_loss_rate/state"
+    unit_of_measurement: "g"  # Weight units
+    accuracy_decimals: 1
+    on_value:
+      then:
+        - script.execute:
+            id: set_pid_input
+            raw_value: !lambda |-
+              float value = x;
+              // Check if physical input inversion is enabled
+              if (id(physical_invert_input_switch).state) {
+                value = -x;
+              }
+              return value;
+    web_server:
+      sorting_group_id: group_physical_input
+      sorting_weight: 1

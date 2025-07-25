@@ -1,0 +1,464 @@
+substitutions:
+  name: $name
+  log_level: $log_level
+
+
+web_server:
+  sorting_groups:
+    - id: group_pid_input
+      name: PID Input
+      sorting_weight: 30
+    - id: group_pid_input_dummy
+      name: PID Dummy Input
+      sorting_weight: 31
+    - id: group_pid_output
+      name: PID Output
+      sorting_weight: 40
+    - id: group_pid_options
+      name: PID Options
+      sorting_weight: 50
+
+
+# Global variables
+# globals:
+#   - id: proportional_on
+#     type: int
+#     restore_value: true
+#     initial_value: '0'  # 0 = P_ON_E, 1 = P_ON_M
+#   - id: controller_direction
+#     type: int
+#     restore_value: true
+#     initial_value: '0'  # 0 = DIRECT, 1 = REVERSE
+#   - id: controller_mode
+#     type: int
+#     restore_value: true
+#     initial_value: '1'  # 0 = MANUAL, 1 = AUTOMATIC
+
+switch:
+  - platform: template
+    name: "PID Output Enable"
+    id: pid_output_enable_switch
+    optimistic: true
+    restore_mode: ALWAYS_ON
+    icon: "mdi:toggle-switch"
+    turn_on_action:
+      - lambda: 'ESP_LOGI("pid_switch", "PID output enabled");'
+    turn_off_action:
+      - lambda: |-
+          // Set output to off (0)
+          id(pid_output).publish_state(0.0);
+          ESP_LOGI("pid_switch", "PID output disabled, output set to 0");
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 0
+
+sensor:
+  - platform: template
+    name: "PID Input"
+    id: pid_input
+    update_interval: never
+    accuracy_decimals: 3
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 1
+
+  # New scaled input sensor
+  - platform: template
+    name: "PID Scaled Input"
+    id: pid_scaled_input
+    update_interval: never
+    accuracy_decimals: 3
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 2
+
+
+  # these are our PID‐managed outputs
+  - platform: template
+    name: "PID Computed Output"
+    id: pid_output
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 1
+    on_value:
+      - script.execute:
+          id: set_output
+          raw_value: !lambda 'return x / 255.0;'
+
+
+# Script to set PID input with scaling and inversion check
+script:
+  - id: set_pid_input
+    parameters:
+      raw_value: float
+    then:
+      - lambda: |-
+          float final_value = raw_value;
+          
+          // Apply scaling logic
+          float input_min = id(input_scale_min).state;
+          float input_max = id(input_scale_max).state;
+          float setpoint_raw = id(setpoint_number).state;
+          
+          // Scale input from raw range to 0-255
+          float scaled_input = (final_value - input_min) / (input_max - input_min) * 255.0f;
+          // Scale setpoint from raw range to 0-255
+          float scaled_setpoint = (setpoint_raw - input_min) / (input_max - input_min) * 255.0f;
+          
+          // Clamp values to 0-255 range
+          scaled_input = std::max(0.0f, std::min(255.0f, scaled_input));
+          scaled_setpoint = std::max(0.0f, std::min(255.0f, scaled_setpoint));
+          
+          ESP_LOGI("set_pid_input", "Raw: %.3f, Final: %.3f, Scaled: %.3f, Setpoint raw: %.3f, Setpoint scaled: %.3f", 
+                   raw_value, final_value, scaled_input, setpoint_raw, scaled_setpoint);
+          
+          // Update the scaled sensors for display
+          id(pid_scaled_input).publish_state(scaled_input);
+          id(pid_scaled_setpoint).publish_state(scaled_setpoint);
+          
+          // Publish the scaled input to PID (PID uses the scaled values internally)
+          id(pid_input).publish_state(final_value);
+
+  - id: update_setpoint_scaling
+    then:
+      - lambda: |-
+          // Apply scaling logic to current setpoint
+          float input_min = id(input_scale_min).state;
+          float input_max = id(input_scale_max).state;
+          float setpoint_raw = id(setpoint_number).state;
+
+          // Clamp setpoint_raw to input_min/input_max range
+          float clamped_setpoint = std::max(input_min, std::min(input_max, setpoint_raw));
+
+          // Scale setpoint from raw range to 0-255
+          float scaled_setpoint = (clamped_setpoint - input_min) / (input_max - input_min) * 255.0f;
+
+          // Clamp to 0-255
+          scaled_setpoint = std::max(0.0f, std::min(255.0f, scaled_setpoint));
+
+          ESP_LOGI("update_setpoint_scaling", "Setpoint raw: %.3f, Clamped: %.3f, Scaled: %.3f (min: %.3f, max: %.3f)", 
+                   setpoint_raw, clamped_setpoint, scaled_setpoint, input_min, input_max);
+
+          // Update the scaled setpoint sensor for display
+          id(pid_scaled_setpoint).publish_state(scaled_setpoint);
+
+# Button to update PID input
+button:
+  - platform: template
+    name: "Update PID Input"
+    id: update_pid_input_button
+    on_press:
+      then:
+        - script.execute:
+            id: set_pid_input
+            raw_value: !lambda "return id(pid_input_number).state;"
+    web_server:
+      sorting_group_id: group_pid_input_dummy
+      sorting_weight: 2
+  
+number:
+  - platform: template
+    name: "PID Dummy Input"
+    id: pid_input_number
+    min_value: -50.0
+    max_value: 150.0
+    step: 0.1
+    initial_value: 20.0
+    optimistic: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_input_dummy
+      sorting_weight: 1
+
+  - platform: template
+    name: "PID Setpoint"
+    id: setpoint_number
+    min_value: 0.0
+    max_value: 1000.0
+    step: 0.1
+    initial_value: 20.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    on_value:
+      then:
+        - script.execute: update_setpoint_scaling
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 2
+
+  - platform: template
+    name: "PID Scaled Setpoint"
+    id: pid_scaled_setpoint
+    min_value: 0.0
+    max_value: 255.0
+    step: 0.001
+    initial_value: 0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 3
+
+  # New scaling parameters
+  - platform: template
+    name: "Input Scale Min"
+    id: input_scale_min
+    min_value: -100.0
+    max_value: 100.0
+    step: 0.1
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    on_value:
+      then:
+        - script.execute: update_setpoint_scaling
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 6
+
+  - platform: template
+    name: "Input Scale Max"
+    id: input_scale_max
+    min_value: -100.0
+    max_value: 1000.0
+    step: 0.1
+    initial_value: 100.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    on_value:
+      then:
+        - script.execute: update_setpoint_scaling
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 7
+
+  - platform: template
+    name: "Output Scale Min"
+    id: output_scale_min
+    min_value: 0.0
+    max_value: 255.0
+    step: 0.1
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 6
+
+  - platform: template
+    name: "Output Scale Max"
+    id: output_scale_max
+    min_value: 0.0
+    max_value: 255.0
+    step: 0.1
+    initial_value: 255.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 7
+
+  - platform: template
+    name: "Manual Output"
+    id: manual_output
+    min_value: 0.0
+    max_value: 255.0
+    step: 0.1
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 3
+
+  - platform: template
+    name: "PID Kp"
+    id: pid_kp
+    min_value: 0.0
+    max_value: 10.0
+    step: 0.01
+    initial_value: 1.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 3
+
+  - platform: template
+    name: "PID Ki"
+    id: pid_ki
+    min_value: 0.0
+    max_value: 5.0
+    step: 0.01
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 4
+
+  - platform: template
+    name: "PID Kd"
+    id: pid_kd
+    min_value: 0.0
+    max_value: 2.0
+    step: 0.01
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_input
+      sorting_weight: 5
+
+  - platform: template
+    name: "Sample Time (ms)"
+    id: sample_time
+    min_value: 100.0
+    max_value: 60000.0
+    step: 10.0
+    initial_value: 1000.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_options
+
+  - platform: template
+    name: "Output Min"
+    id: output_min
+    min_value: 0
+    max_value: 255
+    step: 0.1
+    initial_value: 0.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 4
+
+  - platform: template
+    name: "Output Max"
+    id: output_max
+    min_value: 0
+    max_value: 255
+    step: 0.1
+    initial_value: 255.0
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 5
+
+  - platform: template
+    name: "Output State Threshold"
+    id: threshold
+    min_value: 0.0
+    max_value: 255.0
+    step: 0.1
+    initial_value: 100
+    optimistic: true
+    restore_value: true
+    mode: box
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 10
+
+binary_sensor:
+  - platform: template
+    name: "PID Output State"
+    id: pid_state
+    web_server:
+      sorting_group_id: group_pid_output
+      sorting_weight: 2
+
+pid_controller:
+  id: my_pid
+  input_sensor: pid_scaled_input
+  setpoint_number: pid_scaled_setpoint
+  kp_number: pid_kp
+  ki_number: pid_ki
+  kd_number: pid_kd
+  output_sensor: pid_output
+  state_sensor: pid_state
+  manual_output_number: manual_output
+  sample_time_number: sample_time
+  output_min_number: output_min
+  output_max_number: output_max
+  proportional_on_select: proportional_on_select
+  controller_direction_select: controller_direction_select
+  controller_mode_select: controller_mode_select
+  sampling_mode_select: sampling_mode_select
+  threshold_number: threshold
+
+select:
+  - platform: template
+    name: "Proportional On"
+    id: proportional_on_select
+    options:
+      - "Proportional-on-Error"
+      - "Proportional-on-Measurement"
+    initial_option: "Proportional-on-Error"
+    optimistic: true
+    restore_value: true
+    on_value:
+      - lambda: |-
+          ESP_LOGI("pid_config", "Proportional mode changed to: %s", x.c_str());
+    web_server:
+      sorting_group_id: group_pid_options
+
+  - platform: template
+    name: "Controller Direction"
+    id: controller_direction_select
+    options:
+      - "DIRECT"
+      - "REVERSE"
+    initial_option: "DIRECT"
+    optimistic: true
+    restore_value: true
+    on_value:
+      - lambda: |-
+          ESP_LOGI("pid_config", "Controller direction changed to: %s", x.c_str());
+    web_server:
+      sorting_group_id: group_pid_options
+
+  - platform: template
+    name: "Controller Mode"
+    id: controller_mode_select
+    options:
+      - "MANUAL"
+      - "AUTOMATIC"
+    initial_option: "AUTOMATIC"
+    optimistic: true
+    restore_value: true
+    on_value:
+      - lambda: |-
+          ESP_LOGI("pid_config", "Controller mode changed to: %s", x.c_str());
+    web_server:
+      sorting_group_id: group_pid_options
+
+  - platform: template
+    name: "Sampling Mode"
+    id: sampling_mode_select
+    options:
+      - "Time-based"
+      - "Event-driven"
+    initial_option: "Time-based"
+    optimistic: true
+    restore_value: true
+    on_value:
+      - lambda: |-
+          ESP_LOGI("pid_config", "Sampling mode changed to: %s", x.c_str());
+    web_server:
+      sorting_group_id: group_pid_options

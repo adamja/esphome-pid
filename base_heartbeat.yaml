@@ -1,0 +1,115 @@
+# Time synchronization
+time:
+  - platform: sntp
+    id: sntp_time
+    servers:
+      - 192.168.1.9
+      - 192.168.1.10
+      - pool.ntp.org
+      # - time.nist.gov
+      # - time.google.com
+    timezone: !secret timezone  # Change this to your timezone (e.g., "America/New_York", "Europe/London")
+    update_interval: 6h
+
+# Heartbeat sensors - both uptime and actual time
+sensor:
+  - platform: template
+    name: "Heartbeat Uptime"
+    id: heartbeat_uptime_sensor
+    lambda: |-
+      return millis() / 1000.0;  // Return current uptime in seconds
+    update_interval: 60s
+    unit_of_measurement: "s"
+    device_class: duration
+    state_class: total_increasing
+
+  - platform: template
+    name: "Heartbeat Timestamp"
+    id: heartbeat_timestamp_sensor
+    lambda: |-
+      auto time = id(sntp_time).now();
+      if (time.is_valid()) {
+        return time.timestamp;  // Return Unix timestamp
+      } else {
+        return NAN;  // Return NaN if time is not synced yet
+      }
+    update_interval: 60s
+    unit_of_measurement: "s"
+    device_class: timestamp
+    state_class: measurement
+
+
+# Heartbeat interval timer - publishes both uptime and timestamp
+interval:
+  - interval: 60s
+    then:
+      # Uptime heartbeat (seconds since boot)
+      - mqtt.publish:
+          topic: "${name}/heartbeat/uptime"
+          payload: !lambda |-
+            char buffer[32];
+            sprintf(buffer, "%.0f", millis() / 1000.0);
+            return std::string(buffer);
+      
+      # Uptime heartbeat human readable (days, hours, minutes)
+      - mqtt.publish:
+          topic: "${name}/heartbeat/uptime_human"
+          payload: !lambda |-
+            unsigned long uptime_seconds = millis() / 1000;
+            unsigned long days = uptime_seconds / 86400;
+            unsigned long hours = (uptime_seconds % 86400) / 3600;
+            unsigned long minutes = (uptime_seconds % 3600) / 60;
+            unsigned long seconds = uptime_seconds % 60;
+            
+            char buffer[64];
+            sprintf(buffer, "%lud %luh %lum %lus", days, hours, minutes, seconds);
+            return std::string(buffer);
+      
+      # Timestamp heartbeat (Unix timestamp)
+      - mqtt.publish:
+          topic: "${name}/heartbeat/timestamp"
+          payload: !lambda |-
+            auto time = id(sntp_time).now();
+            if (time.is_valid()) {
+              char buffer[32];
+              sprintf(buffer, "%.0f", (double)time.timestamp);
+              return std::string(buffer);
+            } else {
+              return std::string("time_not_synced");
+            }
+      
+      # Timestamp heartbeat human readable
+      - mqtt.publish:
+          topic: "${name}/heartbeat/timestamp_human"
+          payload: !lambda |-
+            auto time = id(sntp_time).now();
+            if (time.is_valid()) {
+              return time.strftime("%Y-%m-%d %H:%M:%S");
+            } else {
+              return std::string("Time not synchronized");
+            }
+
+# Manual network time sync button
+button:
+  - platform: template
+    name: "Manual Network Time Sync"
+    entity_category: config
+    on_press:
+      - script.execute: manual_sntp_sync
+
+# Scripts for manual operations
+script:
+  - id: manual_sntp_sync
+    then:
+      - logger.log: "Manual SNTP time sync requested..."
+      - component.update: sntp_time
+      - delay: 5s  # Wait for sync to complete
+      - lambda: |-
+          auto time_now = id(sntp_time).now();
+          if (time_now.is_valid()) {
+            ESP_LOGI("main", "Network time sync successful: %04d-%02d-%02d %02d:%02d:%02d", 
+              time_now.year, time_now.month, time_now.day_of_month,
+              time_now.hour, time_now.minute, time_now.second);
+          } else {
+            ESP_LOGW("main", "Network time sync failed or still in progress");
+          }

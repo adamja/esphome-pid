@@ -1,0 +1,172 @@
+# DS3502 Digital Potentiometer Example
+# This example demonstrates basic usage of the DS3502 I2C digital potentiometer
+# as an output device in ESPHome
+
+substitutions:
+  device_name: ds3502-example
+  friendly_name: "DS3502 Example"
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+  level: DEBUG
+
+# Enable Home Assistant API
+api:
+  password: !secret api_password
+
+# MQTT Configuration
+mqtt:
+  broker: !secret mqtt_broker
+  port: !secret mqtt_port
+  username: !secret mqtt_username
+  password: !secret mqtt_password
+  discovery: true
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${device_name} Fallback Hotspot"
+    password: "fallback_password"
+
+captive_portal:
+
+# Web server for easy control
+web_server:
+  port: 80
+
+# I2C configuration (ESP32 default pins)
+i2c:
+  sda: 21
+  scl: 22
+  scan: true
+
+# External component - point to your local ds3502 component
+external_components:
+  - source:
+      path: components/
+      type: local
+    components: [ds3502]
+
+# DS3502 Component
+ds3502:
+  id: my_ds3502
+  address: 0x28  # Default DS3502 I2C address
+
+# DS3502 Output (with invert option)
+output:
+  - platform: ds3502
+    id: ds3502_output
+    ds3502_id: my_ds3502
+    inverted: true  # Set to true to invert output: 0% becomes 100%, 100% becomes 0%
+
+# Number component to control the output
+number:
+  - platform: template
+    name: "DS3502 Output Level"
+    id: output_level
+    min_value: 0
+    max_value: 100
+    step: 1
+    initial_value: 0
+    optimistic: true
+    unit_of_measurement: "%"
+    mode: slider
+    on_value:
+      then:
+        - lambda: |-
+            float level = x / 100.0;
+            id(ds3502_output)->set_level(level);
+
+# Sensor to read back the actual wiper position
+sensor:
+  - platform: template
+    name: "DS3502 Wiper Position"
+    id: wiper_position
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    update_interval: 5s
+    lambda: |-
+      uint8_t wiper_value = id(my_ds3502)->get_wiper_value();
+      float percentage = (wiper_value / 127.0f) * 100.0f;
+      ESP_LOGD("ds3502_sensor", "Wiper value: %d (%.1f%%)", wiper_value, percentage);
+      return percentage;
+
+# Buttons for quick testing
+button:
+  - platform: template
+    name: "0% Set"
+    on_press:
+      then:
+        - lambda: |-
+            id(ds3502_output)->set_level(0.0);
+        - number.set:
+            id: output_level
+            value: 0
+
+  - platform: template
+    name: "25% Set"
+    on_press:
+      then:
+        - lambda: |-
+            id(ds3502_output)->set_level(0.25);
+        - number.set:
+            id: output_level
+            value: 25
+
+  - platform: template
+    name: "50% Set"
+    on_press:
+      then:
+        - lambda: |-
+            id(ds3502_output)->set_level(0.5);
+        - number.set:
+            id: output_level
+            value: 50
+
+  - platform: template
+    name: "75% Set"
+    on_press:
+      then:
+        - lambda: |-
+            id(ds3502_output)->set_level(0.75);
+        - number.set:
+            id: output_level
+            value: 75
+
+  - platform: template
+    name: "100% Set"
+    on_press:
+      then:
+        - lambda: |-
+            id(ds3502_output)->set_level(1.0);
+        - number.set:
+            id: output_level
+            value: 100
+
+# Text sensor to show connection status
+text_sensor:
+  - platform: template
+    name: "DS3502 Status"
+    update_interval: 10s
+    lambda: |-
+      if (id(my_ds3502)->is_communication_failed()) {
+        return std::string("Failed - Check I2C connection");
+      } else {
+        return std::string("Connected - Ready");
+      }

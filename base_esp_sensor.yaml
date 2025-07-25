@@ -1,0 +1,124 @@
+# base_esp_sensor.yaml
+substitutions:
+  device_label: $device_label
+  device_id: $device_id
+
+
+binary_sensor:
+  - platform: status
+    name: "${device_label} Connection Status"
+    icon: "mdi:lan-connect"
+    web_server:
+      sorting_group_id: ${device_id}_system_group
+
+sensor:
+  - platform: wifi_signal
+    name: "${device_label} WiFi Signal"
+    update_interval: 30s
+    internal: false
+    icon: "mdi:wifi-strength-4"
+    web_server:
+      sorting_group_id: ${device_id}_system_group
+
+  # Wi-Fi signal as percentage
+  - platform: template
+    name: "${device_label} WiFi Signal Percentage"
+    unit_of_measurement: '%'
+    icon: "mdi:wifi-strength-1"
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: |-
+      int rssi = WiFi.RSSI();
+      if (rssi <= -100) return 0;
+      if (rssi >= -50)  return 100;
+      return (uint8_t)((rssi + 100) * 2);
+    web_server:
+      sorting_group_id: ${device_id}_system_group
+
+text_sensor:
+  - platform: template
+    name: "${device_label} IP Address"
+    lambda: |-
+      if (WiFi.localIP().toString() != "(IP unset)") {
+        return {std::string(WiFi.localIP().toString().c_str())};
+      } else {
+        return {std::string("Not connected")};
+      }
+    icon: "mdi:ip"
+    update_interval: 30s
+    web_server:
+      sorting_group_id: ${device_id}_system_group
+
+  # SSID Sensor
+  - platform: template
+    name: "${device_label} SSID"
+    lambda: |-
+      if (WiFi.isConnected()) {
+        return {std::string(WiFi.SSID().c_str())};
+      } else {
+        return {std::string("Not connected")};
+      }
+    icon: "mdi:wifi"
+    update_interval: 30s
+    web_server:
+      sorting_group_id: ${device_id}_system_group
+
+  # MAC Address Sensor
+  - platform: template
+    name: "${device_label} MAC Address"
+    lambda: |-
+      return {std::string(WiFi.macAddress().c_str())};
+    icon: "mdi:network"
+    update_interval: 30s
+    web_server:
+      sorting_group_id: ${device_id}_system_group
+
+switch:
+  - platform: restart
+    name: "${device_label} Restart Device"
+    web_server:
+      sorting_group_id: ${device_id}_control_group
+
+select:
+  - platform: template
+    name: "${device_label} Log Level"
+    id: log_level_select
+    options:
+      - "NONE"
+      - "ERROR"
+      - "WARN"
+      - "INFO"
+      - "DEBUG"
+      - "VERBOSE"
+      - "VERY_VERBOSE"
+    initial_option: "INFO"
+    optimistic: true
+    on_value:
+      then:
+        - lambda: |-
+            ESP_LOGI("log_level", "Setting log level to: %s", x.c_str());
+            // Set both ESP-IDF and ESPHome logger levels
+            if (x == "NONE") {
+              esp_log_level_set("*", ESP_LOG_NONE);
+              logger::global_logger->set_log_level(0);  // ESPHOME_LOG_LEVEL_NONE
+            } else if (x == "ERROR") {
+              esp_log_level_set("*", ESP_LOG_ERROR);
+              logger::global_logger->set_log_level(1);  // ESPHOME_LOG_LEVEL_ERROR
+            } else if (x == "WARN") {
+              esp_log_level_set("*", ESP_LOG_WARN);
+              logger::global_logger->set_log_level(2);  // ESPHOME_LOG_LEVEL_WARN
+            } else if (x == "INFO") {
+              esp_log_level_set("*", ESP_LOG_INFO);
+              logger::global_logger->set_log_level(3);  // ESPHOME_LOG_LEVEL_INFO
+            } else if (x == "DEBUG") {
+              esp_log_level_set("*", ESP_LOG_DEBUG);
+              logger::global_logger->set_log_level(5);  // ESPHOME_LOG_LEVEL_DEBUG
+            } else if (x == "VERBOSE") {
+              esp_log_level_set("*", ESP_LOG_VERBOSE);
+              logger::global_logger->set_log_level(6);  // ESPHOME_LOG_LEVEL_VERBOSE
+            } else if (x == "VERY_VERBOSE") {
+              esp_log_level_set("*", ESP_LOG_VERBOSE);
+              logger::global_logger->set_log_level(7);  // ESPHOME_LOG_LEVEL_VERY_VERBOSE
+            }
+    web_server:
+      sorting_group_id: ${device_id}_control_group

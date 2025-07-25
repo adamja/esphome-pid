@@ -1,0 +1,22 @@
+# base_group.yaml
+substitutions:
+  device_label: $device_label
+  device_id: $device_id
+
+
+web_server:
+  sorting_groups:
+    # System Information Group (highest priority)
+    - id: ${device_id}_system_group
+      name: "${device_label} System Info"
+      sorting_weight: 100
+
+    # Control Group (relays, switches, etc.)
+    - id: ${device_id}_control_group
+      name: "${device_label} Controls"
+      sorting_weight: 110
+
+    # Status & Diagnostics Group
+    - id: ${device_id}_status_group
+      name: "${device_label} Status"
+      sorting_weight: 120

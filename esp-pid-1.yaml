@@ -1,0 +1,33 @@
+substitutions:
+  name: "esp-pid-1"
+  log_level: DEBUG  # Default log level (INFO, DEBUG, WARN, ERROR)
+  device_id: esp
+  device_label: ESP
+
+
+esphome:
+  name: $name
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# Include the external components
+external_components:
+  - source: components/
+
+
+packages:
+  base_esp: !include base_esp.yaml
+  base_esp_sensor: !include base_esp_sensor.yaml
+  base_group: !include base_group.yaml
+  # base_heartbeat: !include base_heartbeat.yaml
+
+  config_input: !include config_input.yaml
+  config_output: !include config_output.yaml
+  config_pid: !include
+    file: config_pid.yaml
+    vars:
+      device_name: $name
+      log_level: $log_level
